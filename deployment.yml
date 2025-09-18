@@ -1,0 +1,125 @@
+# (옵션) 네임스페이스를 아직 안 만들었으면 포함
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-dev
+---
+# 앱의 일반 설정값 (민감 아님)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-api-config
+  namespace: app-dev
+data:
+  PUBLIC_MESSAGE: "Hello from DEV!"
+  COMMIT_SHA: "first-deploy"
+---
+# KSA: Workload Identity 연결용
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hello-api-ksa
+  namespace: app-dev
+  annotations:
+    # ← 실제 프로젝트 ID로 바꾸세요
+    iam.gke.io/gcp-service-account: "hello-api-gsa@bold-proton-467706-f3.iam.gserviceaccount.com"
+---
+# Secret Manager ↔ K8s Secret 동기화 정의 (SPC)
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: hello-api-gsm
+  namespace: app-dev
+spec:
+  provider: gcp
+  parameters:
+    secrets: |
+      - resourceName: "projects/623930739721/secrets/hello-api-secret-token/versions/latest"
+        fileName: "SECRET_TOKEN"
+  secretObjects:
+    - secretName: hello-api-secret         # ← 여기로 K8s Secret을 만들어/갱신
+      type: Opaque
+      data:
+        - objectName: SECRET_TOKEN
+          key: SECRET_TOKEN
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-api
+  namespace: app-dev
+  labels:
+    app: hello-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-api
+  template:
+    metadata:
+      labels:
+        app: hello-api
+    spec:
+      serviceAccountName: hello-api-ksa     # ← KSA 사용
+      containers:
+        - name: hello-api
+          image: asia-northeast3-docker.pkg.dev/bold-proton-467706-f3/test-apps/hello-api:dev
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PUBLIC_MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: hello-api-config
+                  key: PUBLIC_MESSAGE
+            - name: COMMIT_SHA
+              valueFrom:
+                configMapKeyRef:
+                  name: hello-api-config
+                  key: COMMIT_SHA
+            - name: SECRET_TOKEN
+              valueFrom:
+                secretKeyRef:               # ← SPC가 동기화해줄 K8s Secret 참조 (평문 미포함)
+                  name: hello-api-secret
+                  key: SECRET_TOKEN
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            tcpSocket: { port: 3000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:                      # ← 파일로도 떨어뜨려 두고 싶으면 유지(선택)
+            - name: gsm-secrets
+              mountPath: /var/secrets/gsm
+              readOnly: true
+      volumes:
+        - name: gsm-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: hello-api-gsm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-api
+  namespace: app-dev
+spec:
+  type: LoadBalancer
+  selector:
+    app: hello-api
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 3000
