@@ -1,0 +1,40 @@
+# cloudbuild.yaml
+steps:
+  # 1. Docker 이미지 빌드
+  # Dockerfile이 프로젝트 루트에 있다고 가정합니다.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}', '.']
+    # ${PROJECT_ID}는 Cloud Build가 실행될 때 자동으로 프로젝트 ID로 대체됩니다.
+    # gke-app-repo는 Artifact Registry 저장소 이름입니다.
+    # my-app은 이미지 이름입니다.
+    # ${COMMIT_SHA}는 Git 커밋 해시로, 이미지 태그로 사용되어 버전을 식별합니다.
+
+  # 2. Artifact Registry에 이미지 푸시
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}']
+
+  # 3. Cloud Deploy에 릴리스 생성 요청 (배포 파이프라인 시작)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud deploy releases create my-app-release-${COMMIT_SHA} \
+        --delivery-pipeline=my-app-pipeline \
+        --region=asia-northeast3 \
+        --images=my-app=asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}
+    # my-app-release-${COMMIT_SHA}는 생성될 릴리스의 고유한 이름입니다.
+    # my-app-pipeline은 Cloud Deploy에서 미리 정의한 전달 파이프라인 이름입니다.
+    # my-app은 Deployment YAML 파일 내에서 참조할 이미지 키 이름입니다.
+    # asia-northeast3-docker.pkg.dev...는 위에서 푸시한 이미지의 전체 경로입니다.
+
+# (선택 사항) GKE에 직접 배포하는 경우 (Cloud Deploy 미사용 시)
+# - name: 'gcr.io/cloud-builders/kubectl'
+#   args:
+#   - 'set'
+#   - 'image'
+#   - 'deployment/your-gke-deployment-name' # GKE 클러스터에 배포된 Deployment 이름
+#   - 'your-container-name=asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}'
+#   env:
+#   - 'CLOUDSDK_COMPUTE_ZONE=asia-northeast3-a' # GKE 클러스터가 있는 ZONE
+#   - 'CLOUDSDK_CONTAINER_CLUSTER=your-gke-cluster-name' # GKE 클러스터 이름
