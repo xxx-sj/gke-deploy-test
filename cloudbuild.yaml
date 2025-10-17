@@ -60,7 +60,7 @@ steps:
           --region="${_REGION}" \
           --source-instance-template="${_TPL_BASE}" \
           --metadata="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=dev" \
-          ${STARTUP_FLAG[@]}
+          "${STARTUP_FLAG[@]}"
 
         echo "${TPL_NEW}" > tpl_name.txt
 
@@ -90,7 +90,7 @@ steps:
     args:
       [
         "compute","instance-groups","managed","wait-until-stable","${_MIG_NAME}",
-        "--region=${_REGION}","--timeout=900"
+        "--region=${_REGION}","--timeout=900s"
       ]
 
   # 6) (성공 시) 오래된 템플릿 정리: 최신 N개만 유지, 동일 환경의 MIG들이 쓰는 템플릿 보호
