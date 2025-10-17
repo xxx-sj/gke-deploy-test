@@ -11,7 +11,7 @@ substitutions:
   _REPO: ""                   # 예: asia-northeast3-docker.pkg.dev/.../vtyle-dev-repo/app
   _MIG_NAME: ""               # 예: app-vtyle-dev (리전 MIG)
   _TPL_BASE: ""               # 예: app-tpl-base-vtyle-dev (리전 템플릿 '베이스' 이름)
-  _TPL_PREFIX: ""             # 예: app-tpl-base-vtyle-dev (정리/롤백용 접두사)
+  _TPL_PREFIX: ""             # 예: app-tpl-dev (정리/롤백용 접두사; 환경별로 다르게)
   _MIG_NAMES: ""              # 예: app-vtyle-dev,app-worker-dev (정리 시 보호할 MIG들)
   _KEEP_NUM: "3"              # 정리 시 보관 개수(기본 3)
   _STARTUP_SCRIPT_PATH: ""    # 예: gs://vtyle/app-startup.sh 또는 리포 내 로컬 경로
@@ -45,13 +45,13 @@ steps:
 
         echo "Creating regional IT: ${TPL_NEW} in ${_REGION}"
 
-        # startup-script 경로가 gs:// 이면 startup-script-url 로, 아니면 --metadata-from-file 로 처리
+        # startup-script 경로가 gs:// 이면 startup-script-url, 아니면 --metadata-from-file
         STARTUP_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
-            STARTUP_FLAG+=( --metadata=startup-script-url="${_STARTUP_SCRIPT_PATH}" )
+            STARTUP_FLAG=( --metadata=startup-script-url="${_STARTUP_SCRIPT_PATH}" )
           else
-            STARTUP_FLAG+=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
+            STARTUP_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
           fi
         fi
 
@@ -60,7 +60,7 @@ steps:
           --region="${_REGION}" \
           --source-instance-template="${_TPL_BASE}" \
           --metadata="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=dev" \
-          "${STARTUP_FLAG[@]}"
+          ${STARTUP_FLAG[@]}
 
         echo "${TPL_NEW}" > tpl_name.txt
 
@@ -89,11 +89,12 @@ steps:
     id: wait-stable
     args:
       [
-        "compute","instance-groups","managed","wait-until","${_MIG_NAME}",
-        "--region=${_REGION}","--stable","--timeout=900"
+        "compute","instance-groups","managed","wait-until-stable","${_MIG_NAME}",
+        "--region=${_REGION}","--timeout=900"
       ]
 
   # 6) (성공 시) 오래된 템플릿 정리: 최신 N개만 유지, 동일 환경의 MIG들이 쓰는 템플릿 보호
+  # ▶ 별도 조건 필요 없음 (앞이 실패하면 여기까지 도달하지 않음 = 기본이 SUCCESS 전용)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: prune-old-templates
     entrypoint: bash
@@ -106,10 +107,8 @@ steps:
         TPL_PREFIX="${_TPL_PREFIX}"
         KEEP="${_KEEP_NUM:-3}"
 
-        # 이 환경에서 보호해야 하는 MIG 목록 (콤마 구분)
         IFS=',' read -r -a MIGS <<< "${_MIG_NAMES}"
 
-        # 1) 모든 MIG가 참조 중인 템플릿 selfLink 수집
         PROTECT_LINKS=""
         for MIG in "${MIGS[@]}"; do
           [[ -z "${MIG}" ]] && continue
@@ -119,12 +118,10 @@ steps:
           PROTECT_LINKS="${PROTECT_LINKS} ${LINKS}"
         done
 
-        # 2) selfLink -> 템플릿 이름만 추출
         PROTECT_NAMES=$(echo "${PROTECT_LINKS}" | sed -E 's#.*/instanceTemplates/##g' | tr ' ' '\n' | sort -u)
         echo "Protect templates referenced by MIGs:"
         echo "${PROTECT_NAMES}"
 
-        # 3) 접두사 일치하는 '리전 템플릿'만 최신순 수집
         mapfile -t ALL < <(gcloud compute instance-templates list \
           --project="${PROJECT}" \
           --filter="selfLink~'/regions/${REGION}/' AND name~'^${TPL_PREFIX}'" \
@@ -134,11 +131,9 @@ steps:
         echo "Found templates (newest first) with prefix '${TPL_PREFIX}':"
         printf '%s\n' "${ALL[@]}"
 
-        # 4) 최신 KEEP개 + 보호 대상 제외, 나머지 삭제
         TO_DELETE=()
         COUNT=0
         for T in "${ALL[@]}"; do
-          # 보호 대상은 skip
           if echo "${PROTECT_NAMES}" | grep -qx "${T}"; then
             continue
           fi
@@ -155,26 +150,32 @@ steps:
 
         echo "Deleting old templates:"
         printf ' - %s\n' "${TO_DELETE[@]}"
-
         for T in "${TO_DELETE[@]}"; do
           gcloud compute instance-templates delete "${T}" \
             --project="${PROJECT}" --region="${REGION}" --quiet
         done
-    when: ["SUCCESS"]
 
-  # 7) (실패 시) 자동 롤백: 직전 템플릿으로
+  # 7) (실패 시) 자동 롤백: 항상 실행하고, 실패일 때만 동작
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: rollback-on-failure
     entrypoint: bash
+    waitFor: ['-']   # ← 이전 스텝 성공/실패와 무관하게 항상 실행
     args:
       - -lc
       - |
         set -euo pipefail
+        # 현재 빌드 상태 확인
+        STATUS=$(gcloud builds describe "$BUILD_ID" --project "${_PROJECT}" --format='value(status)')
+        if [[ "$STATUS" == "SUCCESS" ]]; then
+          echo "Build succeeded; skip rollback."
+          exit 0
+        fi
+
         echo "⚠️ Deploy failed, rolling back..."
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
-        MIG="${_MIG_NAME}"          # <-- 오타 수정됨
-        TPL_PREFIX="${_TPL_PREFIX}" # 접두사 기준으로 직전 템플릿 선택
+        MIG="${_MIG_NAME}"
+        TPL_PREFIX="${_TPL_PREFIX}"
 
         PREV=$(gcloud compute instance-templates list \
           --project="$PROJECT" \
@@ -191,10 +192,9 @@ steps:
         gcloud compute instance-groups managed rolling-action start-update "$MIG" \
           --project="$PROJECT" --region="$REGION" \
           --type=proactive --max-surge=0 --max-unavailable=1 \
-          --version=template=projects/$PROJECT/regions/$REGION/instanceTemplates/$PREV
+          --version="template=projects/$PROJECT/regions/$REGION/instanceTemplates/$PREV"
 
         echo "✅ Rollback triggered."
-    when: ["FAILURE"]
 
 images:
   - "${_REPO}:$SHORT_SHA"
