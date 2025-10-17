@@ -40,12 +40,13 @@ steps:
       - -lc
       - |
         set -euo pipefail
-        TPL_NEW="${_TPL_BASE}-$SHORT_SHA"
+        # Cloud Build substitution (한 번만 실행 시 치환됨)
+        TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
         IMAGE_URI="${_REPO}:$SHORT_SHA"
 
-        echo "Creating regional IT: ${TPL_NEW} in ${_REGION}"
+        # echo나 gcloud 인자에서는 $$로 이스케이프 (Cloud Build가 건드리지 않게)
+        echo "Creating regional IT: $${TPL_NEW} in $${_REGION}"
 
-        # startup-script 경로가 gs:// 이면 startup-script-url, 아니면 --metadata-from-file
         STARTUP_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
@@ -55,14 +56,14 @@ steps:
           fi
         fi
 
-        gcloud compute instance-templates create "${TPL_NEW}" \
+        gcloud compute instance-templates create "$${TPL_NEW}" \
           --project="${_PROJECT}" \
           --region="${_REGION}" \
           --source-instance-template="${_TPL_BASE}" \
-          --metadata="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=dev" \
-          "${STARTUP_FLAG[@]}"
+          --metadata="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev" \
+          "$${STARTUP_FLAG[@]}"
 
-        echo "${TPL_NEW}" > tpl_name.txt
+        echo "$${TPL_NEW}" > tpl_name.txt
 
   # 4) MIG 무중단 롤링 업데이트
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -73,17 +74,16 @@ steps:
       - |
         set -euo pipefail
         TPL_NEW="$(cat tpl_name.txt)"
-        TPL_SELF="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/${TPL_NEW}"
+        TPL_SELF="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/$${TPL_NEW}"
 
-        echo "Start proactive rolling update of MIG ${_MIG_NAME} with ${TPL_SELF}"
+        echo "Start proactive rolling update of MIG ${_MIG_NAME} with $${TPL_SELF}"
 
         gcloud compute instance-groups managed rolling-action start-update "${_MIG_NAME}" \
           --region="${_REGION}" \
           --type=proactive \
           --max-surge=1 \
           --max-unavailable=0 \
-          --version="template=${TPL_SELF}"
-
+          --version="template=$${TPL_SELF}"
   # 5) 안정화 대기
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: wait-stable
