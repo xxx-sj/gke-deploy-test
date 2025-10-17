@@ -1,40 +1,201 @@
 # cloudbuild.yaml
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_HIGHCPU_8"
+
+timeout: "1800s"   # 30분
+
+substitutions:
+  _REGION: ""                 # 예: asia-northeast3
+  _PROJECT: ""                # 예: bold-proton-467706-f3
+  _REPO: ""                   # 예: asia-northeast3-docker.pkg.dev/.../vtyle-dev-repo/app
+  _MIG_NAME: ""               # 예: app-vtyle-dev (리전 MIG)
+  _TPL_BASE: ""               # 예: app-tpl-base-vtyle-dev (리전 템플릿 '베이스' 이름)
+  _TPL_PREFIX: ""             # 예: app-tpl-base-vtyle-dev (정리/롤백용 접두사)
+  _MIG_NAMES: ""              # 예: app-vtyle-dev,app-worker-dev (정리 시 보호할 MIG들)
+  _KEEP_NUM: "3"              # 정리 시 보관 개수(기본 3)
+  _STARTUP_SCRIPT_PATH: ""    # 예: gs://vtyle/app-startup.sh 또는 리포 내 로컬 경로
+  _SLACK_WEBHOOK: ""          # (선택)
+
 steps:
-  # 1. Docker 이미지 빌드
-  # Dockerfile이 프로젝트 루트에 있다고 가정합니다.
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}', '.']
-    # ${PROJECT_ID}는 Cloud Build가 실행될 때 자동으로 프로젝트 ID로 대체됩니다.
-    # gke-app-repo는 Artifact Registry 저장소 이름입니다.
-    # my-app은 이미지 이름입니다.
-    # ${COMMIT_SHA}는 Git 커밋 해시로, 이미지 태그로 사용되어 버전을 식별합니다.
+  # 1) Build
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ["build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","."]
 
-  # 2. Artifact Registry에 이미지 푸시
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}']
+  # 2) Push
+  - name: gcr.io/cloud-builders/docker
+    id: push-sha
+    args: ["push","${_REPO}:$SHORT_SHA"]
 
-  # 3. Cloud Deploy에 릴리스 생성 요청 (배포 파이프라인 시작)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    args: ["push","${_REPO}:latest"]
+
+  # 3) 새 Regional Instance Template 생성 (베이스 복제 + 이미지/스크립트 주입)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: create-template
+    entrypoint: bash
     args:
-      - '-c'
+      - -lc
       - |
-        gcloud deploy releases create my-app-release-${COMMIT_SHA} \
-        --delivery-pipeline=my-app-pipeline \
-        --region=asia-northeast3 \
-        --images=my-app=asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}
-    # my-app-release-${COMMIT_SHA}는 생성될 릴리스의 고유한 이름입니다.
-    # my-app-pipeline은 Cloud Deploy에서 미리 정의한 전달 파이프라인 이름입니다.
-    # my-app은 Deployment YAML 파일 내에서 참조할 이미지 키 이름입니다.
-    # asia-northeast3-docker.pkg.dev...는 위에서 푸시한 이미지의 전체 경로입니다.
+        set -euo pipefail
+        TPL_NEW="${_TPL_BASE}-$SHORT_SHA"
+        IMAGE_URI="${_REPO}:$SHORT_SHA"
 
-# (선택 사항) GKE에 직접 배포하는 경우 (Cloud Deploy 미사용 시)
-# - name: 'gcr.io/cloud-builders/kubectl'
-#   args:
-#   - 'set'
-#   - 'image'
-#   - 'deployment/your-gke-deployment-name' # GKE 클러스터에 배포된 Deployment 이름
-#   - 'your-container-name=asia-northeast3-docker.pkg.dev/${PROJECT_ID}/gke-app-repo/my-app:${COMMIT_SHA}'
-#   env:
-#   - 'CLOUDSDK_COMPUTE_ZONE=asia-northeast3-a' # GKE 클러스터가 있는 ZONE
-#   - 'CLOUDSDK_CONTAINER_CLUSTER=your-gke-cluster-name' # GKE 클러스터 이름
+        echo "Creating regional IT: ${TPL_NEW} in ${_REGION}"
+
+        # startup-script 경로가 gs:// 이면 startup-script-url 로, 아니면 --metadata-from-file 로 처리
+        STARTUP_FLAG=()
+        if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
+          if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
+            STARTUP_FLAG+=( --metadata=startup-script-url="${_STARTUP_SCRIPT_PATH}" )
+          else
+            STARTUP_FLAG+=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
+          fi
+        fi
+
+        gcloud compute instance-templates create "${TPL_NEW}" \
+          --project="${_PROJECT}" \
+          --region="${_REGION}" \
+          --source-instance-template="${_TPL_BASE}" \
+          --metadata="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=dev" \
+          "${STARTUP_FLAG[@]}"
+
+        echo "${TPL_NEW}" > tpl_name.txt
+
+  # 4) MIG 무중단 롤링 업데이트
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: rolling-update
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        TPL_NEW="$(cat tpl_name.txt)"
+        TPL_SELF="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/${TPL_NEW}"
+
+        echo "Start proactive rolling update of MIG ${_MIG_NAME} with ${TPL_SELF}"
+
+        gcloud compute instance-groups managed rolling-action start-update "${_MIG_NAME}" \
+          --region="${_REGION}" \
+          --type=proactive \
+          --max-surge=1 \
+          --max-unavailable=0 \
+          --version="template=${TPL_SELF}"
+
+  # 5) 안정화 대기
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: wait-stable
+    args:
+      [
+        "compute","instance-groups","managed","wait-until","${_MIG_NAME}",
+        "--region=${_REGION}","--stable","--timeout=900"
+      ]
+
+  # 6) (성공 시) 오래된 템플릿 정리: 최신 N개만 유지, 동일 환경의 MIG들이 쓰는 템플릿 보호
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: prune-old-templates
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        TPL_PREFIX="${_TPL_PREFIX}"
+        KEEP="${_KEEP_NUM:-3}"
+
+        # 이 환경에서 보호해야 하는 MIG 목록 (콤마 구분)
+        IFS=',' read -r -a MIGS <<< "${_MIG_NAMES}"
+
+        # 1) 모든 MIG가 참조 중인 템플릿 selfLink 수집
+        PROTECT_LINKS=""
+        for MIG in "${MIGS[@]}"; do
+          [[ -z "${MIG}" ]] && continue
+          LINKS=$(gcloud compute instance-groups managed describe "${MIG}" \
+            --project="${PROJECT}" --region="${REGION}" \
+            --format="value(versions[].instanceTemplate)" || true)
+          PROTECT_LINKS="${PROTECT_LINKS} ${LINKS}"
+        done
+
+        # 2) selfLink -> 템플릿 이름만 추출
+        PROTECT_NAMES=$(echo "${PROTECT_LINKS}" | sed -E 's#.*/instanceTemplates/##g' | tr ' ' '\n' | sort -u)
+        echo "Protect templates referenced by MIGs:"
+        echo "${PROTECT_NAMES}"
+
+        # 3) 접두사 일치하는 '리전 템플릿'만 최신순 수집
+        mapfile -t ALL < <(gcloud compute instance-templates list \
+          --project="${PROJECT}" \
+          --filter="selfLink~'/regions/${REGION}/' AND name~'^${TPL_PREFIX}'" \
+          --sort-by="~creationTimestamp" \
+          --format="value(name)")
+
+        echo "Found templates (newest first) with prefix '${TPL_PREFIX}':"
+        printf '%s\n' "${ALL[@]}"
+
+        # 4) 최신 KEEP개 + 보호 대상 제외, 나머지 삭제
+        TO_DELETE=()
+        COUNT=0
+        for T in "${ALL[@]}"; do
+          # 보호 대상은 skip
+          if echo "${PROTECT_NAMES}" | grep -qx "${T}"; then
+            continue
+          fi
+          COUNT=$((COUNT+1))
+          if (( COUNT > KEEP )); then
+            TO_DELETE+=("${T}")
+          fi
+        done
+
+        if (( ${#TO_DELETE[@]} == 0 )); then
+          echo "Nothing to delete."
+          exit 0
+        fi
+
+        echo "Deleting old templates:"
+        printf ' - %s\n' "${TO_DELETE[@]}"
+
+        for T in "${TO_DELETE[@]}"; do
+          gcloud compute instance-templates delete "${T}" \
+            --project="${PROJECT}" --region="${REGION}" --quiet
+        done
+    when: ["SUCCESS"]
+
+  # 7) (실패 시) 자동 롤백: 직전 템플릿으로
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: rollback-on-failure
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        echo "⚠️ Deploy failed, rolling back..."
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        MIG="${_MIG_NAME}"          # <-- 오타 수정됨
+        TPL_PREFIX="${_TPL_PREFIX}" # 접두사 기준으로 직전 템플릿 선택
+
+        PREV=$(gcloud compute instance-templates list \
+          --project="$PROJECT" \
+          --filter="selfLink~'/regions/${REGION}/' AND name~'^${TPL_PREFIX}'" \
+          --sort-by="~creationTimestamp" \
+          --format="value(name)" | sed -n '2p')
+
+        if [[ -z "$PREV" ]]; then
+          echo "No previous template found. Manual rollback required."
+          exit 1
+        fi
+
+        echo "Rolling back to $PREV ..."
+        gcloud compute instance-groups managed rolling-action start-update "$MIG" \
+          --project="$PROJECT" --region="$REGION" \
+          --type=proactive --max-surge=0 --max-unavailable=1 \
+          --version=template=projects/$PROJECT/regions/$REGION/instanceTemplates/$PREV
+
+        echo "✅ Rollback triggered."
+    when: ["FAILURE"]
+
+images:
+  - "${_REPO}:$SHORT_SHA"
+  - "${_REPO}:latest"
