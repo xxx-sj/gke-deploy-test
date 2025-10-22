@@ -110,8 +110,8 @@ steps:
         IFS=',' read -r -a MIGS <<< "${_MIG_NAMES}"
 
         PROTECT_LINKS=""
-        for MIG in "${MIGS[@]}"; do
-          [[ -z "${MIG}" ]] && continue
+        for MIG in "$${MIGS[@]}"; do
+          [[ -z "$${MIG}" ]] && continue
         LINKS=$(gcloud compute instance-groups managed describe "$${MIG}" \
         --project="$${PROJECT}" --region="$${REGION}" \
             --format="value(versions[].instanceTemplate)" || true)
