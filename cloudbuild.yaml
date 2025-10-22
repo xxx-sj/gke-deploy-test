@@ -61,7 +61,7 @@ steps:
           fi
         fi
 
-        gcloud compute region-instance-templates create "$${TPL_NEW}" \
+        gcloud beta compute region-instance-templates create "$${TPL_NEW}" \
           --project="${_PROJECT}" \
           --region="${_REGION}" \
           --source-instance-template="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/${_TPL_BASE}" \
@@ -128,7 +128,7 @@ steps:
         echo "Protect templates referenced by MIGs:"
         echo "$${PROTECT_NAMES}"
 
-        mapfile -t ALL < <(gcloud compute region-instance-templates list \
+        mapfile -t ALL < <(gcloud beta compute region-instance-templates list \
           --project="$${PROJECT}" --region="$${REGION}" \
           --filter="name~'^$${TPL_PREFIX}'" \
           --sort-by="~creationTimestamp" \
@@ -157,7 +157,7 @@ steps:
         echo "Deleting old templates:"
         printf ' - %s\n' "$${TO_DELETE[@]}"
         for T in "$${TO_DELETE[@]}"; do
-          gcloud compute region-instance-templates delete "$${T}" \
+          gcloud beta compute region-instance-templates delete "$${T}" \
             --project="$${PROJECT}" --region="$${REGION}" --quiet
         done
 
@@ -192,7 +192,7 @@ steps:
         TPL_PREFIX="${_TPL_PREFIX}"
 
         PREV=$(
-          gcloud compute region-instance-templates list \
+          gcloud beta compute region-instance-templates list \
             --project="$${PROJECT}" --region="$${REGION}" \
             --filter="name~'^$${TPL_PREFIX}'" \
             --sort-by="~creationTimestamp" \
