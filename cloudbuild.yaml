@@ -89,7 +89,7 @@ steps:
 
         echo "Start proactive rolling update of MIG ${_MIG_NAME} with $${TPL_SELF}"
         
-        gcloud compute instance-groups managed rolling-action start-update "$${_MIG_NAME}" \
+        gcloud compute instance-groups managed rolling-action start-update "${_MIG_NAME}" \
           --region="${_REGION}" \
           --type=proactive \
           --max-surge=1 \
