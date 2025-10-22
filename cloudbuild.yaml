@@ -156,48 +156,67 @@ steps:
             --project="$${PROJECT}" --region="$${REGION}" --quiet
         done
 
-  # 7) (실패 시) 자동 롤백: 항상 실행하고, 실패일 때만 동작
+  # 7) (실패 시) 자동 롤백: 항상 실행하지만 '빌드가 최종 실패'일 때만 동작
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: rollback-on-failure
     entrypoint: bash
-    waitFor: ['-']   # ← 이전 스텝 성공/실패와 무관하게 항상 실행
+    waitFor: ['-']   # 병렬 시작 유지
     args:
       - -lc
       - |
         set -euo pipefail
-        # 현재 빌드 상태 확인
-        STATUS=$(gcloud builds describe "$BUILD_ID" \
-        --project "${_PROJECT}" \
-        --region "${_REGION}" \
-        --format='value(status)')
-        if [[ "$$STATUS" == "SUCCESS" ]]; then
-          echo "Build succeeded; skip rollback."
-          exit 0
-        fi
-
-        echo "⚠️ Deploy failed, rolling back..."
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
+        
+        # 1) 빌드 최종 상태를 폴링 (성공/실패/타임아웃 등 터미널 상태까지)
+        while true; do
+          STATUS=$(gcloud builds describe "$BUILD_ID" \
+            --project "${PROJECT}" --region "${REGION}" \
+            --format='value(status)' || echo "UNKNOWN")
+        
+          case "$STATUS" in
+            SUCCESS)
+              echo "Build succeeded; skip rollback."
+              exit 0
+              ;;
+            FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+              echo "⚠️ Build status = $STATUS → starting rollback..."
+              break
+              ;;
+            QUEUED|WORKING|PENDING|UNKNOWN|"")
+              sleep 5
+              ;;
+            *)
+              echo "Unexpected build status: $STATUS (skip rollback)"
+              exit 0
+              ;;
+          esac
+        done
+        
+        # 2) 여기서만 롤백 실행
         MIG="${_MIG_NAME}"
         TPL_PREFIX="${_TPL_PREFIX}"
-
-        PREV=$(gcloud compute instance-templates list \
-          --project="$$PROJECT" \
-          --filter="selfLink~'/regions/$${REGION}/' AND name~'^$${TPL_PREFIX}'" \
-          --sort-by="~creationTimestamp" \
-          --format="value(name)" | sed -n '2p')
-
-        if [[ -z "$$PREV" ]]; then
-          echo "No previous template found. Manual rollback required."
-          exit 1
+        
+        # 최신 생성순 두 번째(= 바로 이전) regional 템플릿 찾기
+        PREV=$(
+          gcloud compute instance-templates list \
+            --project="${PROJECT}" \
+            --filter="selfLink~'/regions/${REGION}/' AND name~'^${TPL_PREFIX}'" \
+            --sort-by="~creationTimestamp" \
+            --format="value(name)" 2>/dev/null | sed -n '2p' || true
+        )
+        
+        if [[ -z "${PREV}" ]]; then
+          echo "No previous template found. Skip rollback (do not fail build)."
+          exit 0   # ← 첫 배포이거나 권한/리소스 이슈면 실패로 만들지 않음
         fi
-
-        echo "Rolling back to $$PREV ..."
-        gcloud compute instance-groups managed rolling-action start-update "$$MIG" \
-          --project="$$PROJECT" --region="$$REGION" \
+        
+        echo "Rolling back to ${PREV} ..."
+        gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
+          --project="${PROJECT}" --region="${REGION}" \
           --type=proactive --max-surge=0 --max-unavailable=1 \
-          --version="template=projects/$$PROJECT/regions/$$REGION/instanceTemplates/$$PREV"
-
+          --version="template=projects/${PROJECT}/regions/${REGION}/instanceTemplates/${PREV}"
+        
         echo "✅ Rollback triggered."
 
 images:
