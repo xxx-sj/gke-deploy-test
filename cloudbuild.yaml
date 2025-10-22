@@ -92,6 +92,7 @@ steps:
         echo "$${TPL_NEW}" > tpl_name.txt
   # 4) MIG 무중단 롤링 업데이트
   # 4) MIG 무중단 롤링 업데이트
+  # 4) MIG 무중단 롤링 업데이트
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rolling-update
     entrypoint: bash
@@ -100,7 +101,7 @@ steps:
       - |
         set -euo pipefail
         TPL_NEW="$(cat tpl_name.txt)"
-        # 🚨 [수정된 부분] Global 경로로 변경
+        # Global 경로를 사용합니다. (이전 단계의 실제 생성 위치를 반영)
         TPL_SELF="projects/${_PROJECT}/global/instanceTemplates/$${TPL_NEW}" 
 
         echo "Start proactive rolling update of MIG ${_MIG_NAME} with $${TPL_SELF}"
@@ -110,8 +111,8 @@ steps:
           --type=proactive \
           --max-surge=1 \
           --max-unavailable=1 \
-          # 🚨 [수정된 부분] Global 경로로 변경
-          --version="template=projects/${_PROJECT}/global/instanceTemplates/$${TPL_NEW}"
+          # 🚨 [수정된 부분] --version 인수를 전체 큰따옴표로 묶어 Bash 전달 오류 방지
+          "--version=template=projects/${_PROJECT}/global/instanceTemplates/$${TPL_NEW}"
   # 5) 안정화 대기
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: wait-stable
