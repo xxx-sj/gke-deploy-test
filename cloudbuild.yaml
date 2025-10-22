@@ -33,28 +33,55 @@ steps:
     args: ["push","${_REPO}:latest"]
 
   # 3) 새 Regional Instance Template 생성 (베이스 복제 로직을 포기하고 명시적 생성으로 전환)
-  # 3) 새 Regional Instance Template 생성
+  # 3) 새 Regional Instance Template 생성 (metadata 및 startup script 처리 명확화)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: create-template
     entrypoint: bash
     args:
       - -lc
       - |
-        # ... (변수 설정 및 삭제 로직 생략) ...
+        set -euo pipefail
+        
+        TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
+        IMAGE_URI="${_REPO}:$SHORT_SHA"
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        
+        echo "Creating regional IT: $${TPL_NEW} in $${REGION}"
+        
+        # 🚨 [수정된 부분 1] 삭제 로직은 이전처럼 유지합니다 (생략)
+        gcloud compute instance-templates describe "$${TPL_NEW}" \
+          --project="$${PROJECT}" --format="none" 2>/dev/null && \
+          { gcloud compute instance-templates delete "$${TPL_NEW}" --project="$${PROJECT}" --quiet; } || true
         
         # 1) 공통 metadata를 하나로 구성
-        # ... (생략) ...
-        
-        # 2) startup script 처리 (기존 로직 유지)
-        # ... (생략) ...
-        
+        # 🚨 METADATA 변수에 값을 할당할 때 $를 하나만 사용하도록 합니다 (Cloud Build 환경 변수 아님)
+        METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev" 
+
+        # 2) startup script 처리
+        STARTUP_FILE_FLAG=()
+        if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
+          if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
+            # URL은 metadata 키를 추가
+            METADATA="$${METADATA},startup-script-url=${_STARTUP_SCRIPT_PATH}"
+          else
+            # 로컬 파일은 --metadata-from-file=startup-script=... 플래그를 별도로 구성
+            # 🚨 배열에 값을 할당할 때도 $를 하나만 사용합니다.
+            STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
+          fi
+        fi
+
         # 3) 새 템플릿 생성
         gcloud compute instance-templates create "$${TPL_NEW}" \
-          --project="$${PROJECT}" --region="$${REGION}" \
-          --metadata="$$METADATA" "$${STARTUP_FILE_FLAG[@]}" \
-          --machine-type="e2-medium" --image-family="debian-11" \
-          --image-project="debian-cloud" --network="vpc-vtyle-dev" 
-
+          --project="$${PROJECT}" \
+          --region="$${REGION}" \
+          --metadata="$${METADATA}" \
+          "$${STARTUP_FILE_FLAG[@]}" \
+          --machine-type="e2-medium" \
+          --image-family="debian-11" \
+          --image-project="debian-cloud" \
+          --network="vpc-vtyle-dev" 
+        
         echo "$${TPL_NEW}" > tpl_name.txt
   # 4) MIG 무중단 롤링 업데이트 (줄바꿈 제거)
   # 4) MIG 무중단 롤링 업데이트
