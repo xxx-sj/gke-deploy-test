@@ -201,21 +201,21 @@ steps:
         PREV=$(
           gcloud compute instance-templates list \
             --project="$${PROJECT}" \
-            --filter="selfLink~'/regions/$${REGION}/' AND name~'^${TPL_PREFIX}'" \
+            --filter="selfLink~'/regions/$${REGION}/' AND name~'^$${TPL_PREFIX}'" \
             --sort-by="~creationTimestamp" \
             --format="value(name)" 2>/dev/null | sed -n '2p' || true
         )
         
-        if [[ -z "${PREV}" ]]; then
+        if [[ -z "$${PREV}" ]]; then
           echo "No previous template found. Skip rollback (do not fail build)."
           exit 0   # ← 첫 배포이거나 권한/리소스 이슈면 실패로 만들지 않음
         fi
         
         echo "Rolling back to ${PREV} ..."
-        gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
+        gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
           --project="$${PROJECT}" --region="$${REGION}" \
           --type=proactive --max-surge=0 --max-unavailable=1 \
-          --version="template=projects/$${PROJECT}/regions/$${REGION}/instanceTemplates/${PREV}"
+          --version="template=projects/$${PROJECT}/regions/$${REGION}/instanceTemplates/$${PREV}"
         
         echo "✅ Rollback triggered."
 
