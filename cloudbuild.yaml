@@ -69,7 +69,7 @@ steps:
         gcloud beta compute instance-templates create "$${TPL_NEW}" \
           --project="$${PROJECT}" \
           --region="$${REGION}" \
-          --source-instance-template="$${_TPL_BASE}" \
+          --source-instance-template="${_TPL_BASE}" \
           --source-instance-template-region="$${REGION}" \
           --metadata="$$METADATA" \
           "$${STARTUP_FILE_FLAG[@]}"
