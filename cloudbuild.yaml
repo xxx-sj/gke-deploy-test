@@ -135,7 +135,7 @@ steps:
         TO_DELETE=()
         COUNT=0
         for T in "$${ALL[@]}"; do
-          if echo "$${PROTECT_NAMES}" | grep -qx "${T}"; then
+          if echo "$${PROTECT_NAMES}" | grep -qx "$${T}"; then
             continue
           fi
           COUNT=$((COUNT+1))
