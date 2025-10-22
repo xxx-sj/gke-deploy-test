@@ -174,7 +174,7 @@ steps:
         echo "⚠️ Deploy failed, rolling back..."
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
-        MIG="${_MIG_NAME}"
+        MIG="$${_MIG_NAME}"
         TPL_PREFIX="${_TPL_PREFIX}"
 
         PREV=$(gcloud compute instance-templates list \
