@@ -69,15 +69,17 @@ steps:
             STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
           fi
         fi
-
-        # 3) 새 템플릿 생성 (모든 인수를 단일 라인으로 유지)
-        gcloud compute instance-templates create "$${TPL_NEW}" \
+        
+        # 3) 새 템플릿 생성 (모든 인수를 단일 라인으로 유지하여 파싱 오류 방지)
+          gcloud compute instance-templates create "$${TPL_NEW}" \
           --project="$${PROJECT}" --region="$${REGION}" \
           --metadata="$${METADATA}" "$${STARTUP_FILE_FLAG[@]}" \
           --machine-type="e2-medium" --image-family="debian-11" \
-          --image-project="debian-cloud" --network="vpc-vtyle-dev" --subnet="YOUR_ACTUAL_SUBNET_NAME"
-        
-        echo "$${TPL_NEW}" > tpl_name.txt
+          --image-project="debian-cloud" \
+          --network="vpc-vtyle-dev" \
+          --subnet="[실제 서브넷 이름]" # 🚨 이 부분을 GCP 콘솔에서 확인한 실제 이름으로 교체하세요.
+          
+          echo "$${TPL_NEW}" > tpl_name.txt
   # 4) MIG 무중단 롤링 업데이트
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rolling-update
