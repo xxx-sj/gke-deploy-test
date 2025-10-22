@@ -33,6 +33,7 @@ steps:
     args: ["push","${_REPO}:latest"]
 
   # 3) 새 Regional Instance Template 생성 (베이스 복제 로직을 포기하고 명시적 생성으로 전환)
+  # 3) 새 Regional Instance Template 생성 (베이스 복제 로직을 포기하고 명시적 생성으로 전환)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: create-template
     entrypoint: bash
@@ -45,12 +46,12 @@ steps:
         IMAGE_URI="${_REPO}:$SHORT_SHA"
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
-        
+
         echo "Creating regional IT: $${TPL_NEW} in $${REGION}"
-        
+
         # 1) 공통 metadata를 하나로 구성
         METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev"
-        
+
         # 2) startup script 처리
         STARTUP_FILE_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
@@ -62,23 +63,18 @@ steps:
             STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
           fi
         fi
-        
-        # 3) 🚨 기존 템플릿을 소스로 참조하는 플래그를 모두 제거하고, 
-        #    필수 속성(예: 머신 타입, 이미지 등)을 직접 명시하여 새로운 Regional 템플릿을 생성합니다.
+
+        # 3) 🚨 모든 플래그를 한 줄로 이어 붙여서 오류를 방지합니다.
         gcloud compute instance-templates create "$${TPL_NEW}" \
           --project="$${PROJECT}" \
           --region="$${REGION}" \
           --metadata="$$METADATA" \
           "$${STARTUP_FILE_FLAG[@]}" \
-          \
-          # 👇 베이스 템플릿 (_TPL_BASE)의 설정을 여기에 명시해야 합니다. (필수)
-          # 컨테이너 기반 템플릿이라면 'create-with-container'를 사용하고, 아니라면 아래 예시를 참고하세요.
-        
-          --machine-type="e2-medium" \  # 👈 기존 베이스 템플릿의 머신 타입으로 대체
-          --image-family="debian-11" \  # 👈 기존 베이스 템플릿의 이미지 패밀리 또는 특정 이미지로 대체
-          --image-project="debian-cloud" \ # 👈 이미지 프로젝트
-          --network="default" # 👈 네트워크 설정
-        
+          --machine-type="e2-medium" \
+          --image-family="debian-11" \
+          --image-project="debian-cloud" \
+          --network="default"
+
         echo "$${TPL_NEW}" > tpl_name.txt
   # 4) MIG 무중단 롤링 업데이트
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
