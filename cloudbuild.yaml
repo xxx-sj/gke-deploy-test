@@ -166,7 +166,10 @@ steps:
       - |
         set -euo pipefail
         # 현재 빌드 상태 확인
-        STATUS=$(gcloud builds describe "$BUILD_ID" --project "${_PROJECT}" --format='value(status)')
+        STATUS=$(gcloud builds describe "$BUILD_ID" \
+        --project "${_PROJECT}" \
+        --region "${_REGION}" \
+        --format='value(status)')
         if [[ "$$STATUS" == "SUCCESS" ]]; then
           echo "Build succeeded; skip rollback."
           exit 0
