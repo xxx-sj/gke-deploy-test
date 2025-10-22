@@ -100,14 +100,14 @@ steps:
         set -euo pipefail
         TPL_NEW="$(cat tpl_name.txt)"
         TPL_SELF="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/$${TPL_NEW}"
-
+        
         echo "Start proactive rolling update of MIG ${_MIG_NAME} with $${TPL_SELF}"
         
         gcloud compute instance-groups managed rolling-action start-update "${_MIG_NAME}" \
           --region="${_REGION}" \
           --type=proactive \
           --max-surge=1 \
-          --max-unavailable=0 \
+          --max-unavailable=1 \
           --version="template=projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/$${TPL_NEW}"
   # 5) 안정화 대기
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
