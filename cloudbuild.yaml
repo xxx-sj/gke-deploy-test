@@ -45,7 +45,7 @@ steps:
         IMAGE_URI="${_REPO}:$SHORT_SHA"
 
         # echo나 gcloud 인자에서는 $$로 이스케이프 (Cloud Build가 건드리지 않게)
-        echo "Creating regional IT: $${TPL_NEW} in $${_REGION}"
+        echo "Creating regional IT: $${TPL_NEW} in ${_REGION}"
 
         STARTUP_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
