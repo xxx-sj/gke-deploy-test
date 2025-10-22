@@ -39,6 +39,7 @@ steps:
     args:
       - -lc
       - |
+        gcloud components install alpha --quiet
         set -euo pipefail
 
         TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
@@ -61,7 +62,7 @@ steps:
           fi
         fi
 
-        gcloud compute instance-templates create "$${TPL_NEW}" \
+        gcloud alpha compute region-instance-templates create "$${TPL_NEW}" \
           --project="${_PROJECT}" \
           --region="${_REGION}" \
           --source-instance-template="projects/${_PROJECT}/regions/${_REGION}/instanceTemplates/${_TPL_BASE}" \
