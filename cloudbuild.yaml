@@ -106,7 +106,7 @@ steps:
           --region="${_REGION}" \
           --type=proactive \
           --max-surge=1 \
-          --max-unavailable=1 \
+          --max-unavailable=0 \ # 무중단을 위해 0으로 설정. 내려가는 인스턴스 없이.
           "--version=template=$${TPL_PATH}" # 🚨 TPL_PATH 변수 사용
 
         # 참고: gcloud 명령어를 단일 라인으로 작성하지 않는 경우, 
