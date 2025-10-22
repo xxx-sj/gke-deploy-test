@@ -40,19 +40,24 @@ steps:
       - -lc
       - |
         set -euo pipefail
-        # Cloud Build substitution (한 번만 실행 시 치환됨)
+
         TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
         IMAGE_URI="${_REPO}:$SHORT_SHA"
 
-        # echo나 gcloud 인자에서는 $$로 이스케이프 (Cloud Build가 건드리지 않게)
         echo "Creating regional IT: $${TPL_NEW} in ${_REGION}"
 
-        STARTUP_FLAG=()
+        # 1) 공통 metadata를 하나로 구성
+        METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev"
+
+        # 2) startup script 처리
+        STARTUP_FILE_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
-            STARTUP_FLAG=( --metadata=startup-script-url="${_STARTUP_SCRIPT_PATH}" )
+            # URL은 metadata 키를 추가(→ --metadata는 '한 번만' 사용)
+            METADATA="$METADATA,startup-script-url=${_STARTUP_SCRIPT_PATH}"
           else
-            STARTUP_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
+            # 로컬 파일은 from-file 플래그를 별도로 추가
+            STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
           fi
         fi
 
@@ -60,8 +65,8 @@ steps:
           --project="${_PROJECT}" \
           --region="${_REGION}" \
           --source-instance-template="${_TPL_BASE}" \
-          --metadata="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev" \
-          "$${STARTUP_FLAG[@]}"
+          --metadata="$METADATA" \
+          "$${STARTUP_FILE_FLAG[@]}"
 
         echo "$${TPL_NEW}" > tpl_name.txt
 
