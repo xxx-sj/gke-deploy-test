@@ -174,20 +174,20 @@ steps:
             --project "$${PROJECT}" --region "$${REGION}" \
             --format='value(status)' || echo "UNKNOWN")
         
-          case "$STATUS" in
+          case "$$STATUS" in
             SUCCESS)
               echo "Build succeeded; skip rollback."
               exit 0
               ;;
             FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
-              echo "⚠️ Build status = $STATUS → starting rollback..."
+              echo "⚠️ Build status = $$STATUS → starting rollback..."
               break
               ;;
             QUEUED|WORKING|PENDING|UNKNOWN|"")
               sleep 5
               ;;
             *)
-              echo "Unexpected build status: $STATUS (skip rollback)"
+              echo "Unexpected build status: $$STATUS (skip rollback)"
               exit 0
               ;;
           esac
