@@ -54,7 +54,7 @@ steps:
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
             # URL은 metadata 키를 추가(→ --metadata는 '한 번만' 사용)
-            METADATA="$METADATA,startup-script-url=${_STARTUP_SCRIPT_PATH}"
+            METADATA="$$METADATA,startup-script-url=${_STARTUP_SCRIPT_PATH}"
           else
             # 로컬 파일은 from-file 플래그를 별도로 추가
             STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
@@ -65,7 +65,7 @@ steps:
           --project="${_PROJECT}" \
           --region="${_REGION}" \
           --source-instance-template="${_TPL_BASE}" \
-          --metadata="$METADATA" \
+          --metadata="$$METADATA" \
           "$${STARTUP_FILE_FLAG[@]}"
 
         echo "$${TPL_NEW}" > tpl_name.txt
