@@ -171,7 +171,7 @@ steps:
         # 1) 빌드 최종 상태를 폴링 (성공/실패/타임아웃 등 터미널 상태까지)
         while true; do
           STATUS=$(gcloud builds describe "$BUILD_ID" \
-            --project "$${PROJECT}" --region "${REGION}" \
+            --project "$${PROJECT}" --region "$${REGION}" \
             --format='value(status)' || echo "UNKNOWN")
         
           case "$STATUS" in
@@ -201,7 +201,7 @@ steps:
         PREV=$(
           gcloud compute instance-templates list \
             --project="$${PROJECT}" \
-            --filter="selfLink~'/regions/${REGION}/' AND name~'^${TPL_PREFIX}'" \
+            --filter="selfLink~'/regions/$${REGION}/' AND name~'^${TPL_PREFIX}'" \
             --sort-by="~creationTimestamp" \
             --format="value(name)" 2>/dev/null | sed -n '2p' || true
         )
@@ -213,9 +213,9 @@ steps:
         
         echo "Rolling back to ${PREV} ..."
         gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
-          --project="$${PROJECT}" --region="${REGION}" \
+          --project="$${PROJECT}" --region="$${REGION}" \
           --type=proactive --max-surge=0 --max-unavailable=1 \
-          --version="template=projects/$${PROJECT}/regions/${REGION}/instanceTemplates/${PREV}"
+          --version="template=projects/$${PROJECT}/regions/$${REGION}/instanceTemplates/${PREV}"
         
         echo "✅ Rollback triggered."
 
