@@ -211,7 +211,7 @@ steps:
           exit 0   # ← 첫 배포이거나 권한/리소스 이슈면 실패로 만들지 않음
         fi
         
-        echo "Rolling back to ${PREV} ..."
+        echo "Rolling back to $${PREV} ..."
         gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
           --project="$${PROJECT}" --region="$${REGION}" \
           --type=proactive --max-surge=0 --max-unavailable=1 \
