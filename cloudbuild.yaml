@@ -33,7 +33,7 @@ steps:
     args: ["push","${_REPO}:latest"]
 
   # 3) 새 Regional Instance Template 생성 (베이스 복제 + 이미지/스크립트 주입)
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: create-template
     entrypoint: bash
     args:
@@ -71,7 +71,7 @@ steps:
         echo "$${TPL_NEW}" > tpl_name.txt
 
   # 4) MIG 무중단 롤링 업데이트
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rolling-update
     entrypoint: bash
     args:
@@ -90,7 +90,7 @@ steps:
           --max-unavailable=0 \
           --version="template=$${TPL_SELF}"
   # 5) 안정화 대기
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: wait-stable
     args:
       [
@@ -100,7 +100,7 @@ steps:
 
   # 6) (성공 시) 오래된 템플릿 정리: 최신 N개만 유지, 동일 환경의 MIG들이 쓰는 템플릿 보호
   # ▶ 별도 조건 필요 없음 (앞이 실패하면 여기까지 도달하지 않음 = 기본이 SUCCESS 전용)
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: prune-old-templates
     entrypoint: bash
     args:
@@ -162,7 +162,7 @@ steps:
         done
 
   # 7) (실패 시) 자동 롤백: 항상 실행하지만 '빌드가 최종 실패'일 때만 동작
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rollback-on-failure
     entrypoint: bash
     waitFor: [ '-' ]
