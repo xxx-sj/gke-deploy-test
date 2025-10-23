@@ -119,7 +119,7 @@ steps:
     args:
       [
         "compute","instance-groups","managed","wait-until-stable","${_MIG_NAME}",
-        "--region=${_REGION}","--timeout=900" # 🚨 's'를 제거하고 숫자 900만 남김
+        "--region=${_REGION}","--timeout=600" # 🚨 's'를 제거하고 숫자 900만 남김
       ]
   # 6) (성공 시) 오래된 템플릿 정리: 최신 N개만 유지, 동일 환경의 MIG들이 쓰는 템플릿 보호
   # ▶ 별도 조건 필요 없음 (앞이 실패하면 여기까지 도달하지 않음 = 기본이 SUCCESS 전용)
