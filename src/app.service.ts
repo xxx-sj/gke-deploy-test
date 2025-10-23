@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 @Injectable()
 export class AppService {
   getHello(): string {
-    const test = process.env['AD_USER'];
+    const test = process.env['IS_RUNNER'];
     return `Hello World! changed! ㅠㅠㅠ ${test}`;
   }
 }
