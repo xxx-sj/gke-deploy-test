@@ -78,6 +78,7 @@ steps:
           --image-project="debian-cloud" \
           --network="vpc-vtyle-dev" \
           --subnet="vtyle-dev-sub-a" \
+          --scopes="cloud-platform" \
           --no-address  #🚨 이 부분을 GCP 콘솔에서 확인한 실제 이름으로 교체하세요. (예: vpc-vtyle-dev-subnet-asia-northeast3)
           
           echo "$${TPL_NEW}" > tpl_name.txt
