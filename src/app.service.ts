@@ -4,6 +4,6 @@ import { Injectable } from '@nestjs/common';
 export class AppService {
   getHello(): string {
     const test = process.env['IS_RUNNER'];
-    return `Hello World! changed! ㅠㅠㅠ ${test}`;
+    return `Hello World! changed! ㅠㅠㅠ ${test} 젭라`;
   }
 }
