@@ -21,6 +21,7 @@ substitutions:
   _VPC_NETWORK: ""
   _SA_EMAIL: ""
 
+
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build
