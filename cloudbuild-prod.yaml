@@ -21,7 +21,6 @@ substitutions:
   _VPC_NETWORK: ""
   _SA_EMAIL: ""
 
-  
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build
@@ -33,8 +32,28 @@ steps:
     args:
       - -lc
       - |
-        echo "REPO=${_REPO}"
-        [[ "${_REPO}" == *"/"*"/"*"/"*"/"* ]] || { echo "💥 _REPO에 IMAGE 이름이 없습니다 (…/repo/**image**)"; exit 1; }
+        set -euo pipefail
+        REPO="${_REPO}"
+        
+        # 디버그: 공백/개행 여부 확인
+        printf 'REPO(|%s|)\n' "$REPO"
+        
+        # 이미지 이름 = 마지막 path 세그먼트
+        IMAGE_NAME="${REPO##*/}"
+        
+        if [[ -z "$IMAGE_NAME" || "$IMAGE_NAME" == "$REPO" ]]; then
+          echo "💥 _REPO에 IMAGE 이름이 없습니다 (…/repo/**image**)"
+          exit 1
+        fi
+        
+        # 최소 형태: <loc>-docker.pkg.dev/<project>/<repo>/<image>
+        IFS='/' read -r -a parts <<< "$REPO"
+        if (( ${#parts[@]} < 4 )); then
+          echo "💥 _REPO 형식 오류: 기대값 <loc>-docker.pkg.dev/<project>/<repo>/<image>"
+          exit 1
+        fi
+        
+        echo "✅ _REPO OK: $REPO"
 
   - name: gcr.io/cloud-builders/docker
     id: push-sha
