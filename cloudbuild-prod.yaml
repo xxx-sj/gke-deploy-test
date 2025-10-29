@@ -73,6 +73,7 @@ steps:
           fi
         fi
 
+
         # 각 MIG 반복
         for i in "$${!MIG_NAMES[@]}"; do
           MIG="$${MIG_NAMES[$i]}"
