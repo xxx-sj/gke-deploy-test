@@ -76,14 +76,14 @@ steps:
         VPC_NETWORK="${_VPC_NETWORK}"
         IMAGE_URI="${_REPO}:$SHORT_SHA"
 
-        # --- 👇 여기에 디버그 코드 추가 ---
-        echo "=== DEBUG: Variable Check ==="
-        echo "IMAGE_URI (이중 $$): $${IMAGE_URI}"
-        echo "PROJECT (이중 $$): $${PROJECT}"
-        echo "============================="
-        # --- 👆 디버그 코드 추가 끝 ---
+        # 🔧 여기서 “YAML 치환값”을 런타임 변수로 저장
+        SHA="$SHORT_SHA"
 
-        IFS=',' read -r -a MIG_NAMES   <<< "${_MIGS}"
+        echo "=== DEBUG: Variable Check ==="
+        echo "IMAGE_URI: $${IMAGE_URI}"
+        echo "PROJECT:   $${PROJECT}"
+        echo "SHA:       $${SHA}"
+        echo "============================="
 
         IFS=',' read -r -a MIG_NAMES   <<< "${_MIGS}"
         IFS=',' read -r -a ZONES       <<< "${_ZONES}"
@@ -117,7 +117,9 @@ steps:
             || { echo "ERROR: empty item at index $i"; exit 1; }
 
           SUBNET_URI="projects/$${PROJECT}/regions/$${REGION}/subnetworks/$${SUBNET_NAME}"
-          TPL_NEW="${_TPL_BASE}-$${SUBNET_NAME}-$${SHORT_SHA}"
+
+          TPL_NEW="${_TPL_BASE}-$${SUBNET_NAME}-$${SHA}"
+
           METADATA="$${METADATA_BASE},ENV_SECRET_NAME=$${ENV_SECRET_NAME}"
 
           CUR_TEMPLATE=$(gcloud compute instance-groups managed describe "$${MIG}" \
