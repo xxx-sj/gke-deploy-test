@@ -6,23 +6,22 @@ options:
 timeout: "1800s"
 
 substitutions:
-  _REGION: ""                 # e.g. asia-northeast3
-  _PROJECT: ""                # e.g. bold-proton-467706-f3
-  _REPO: ""                   # e.g. asia-northeast3-docker.pkg.dev/.../vtyle-prod-repo/app
-  _TPL_BASE: ""               # e.g. it-vtyle-prod-base
-  _TPL_PREFIX: ""             # e.g. it-vtyle-prod-base  (정리/롤백 탐색용 접두사)
-  _MIGS: ""                   # e.g. mig-vtyle-prod-a,mig-vtyle-prod-b
-  _ZONES: ""                  # e.g. asia-northeast3-a,asia-northeast3-b
-  _SUBNETS: ""                # e.g. vtyle-prod-sub-a,vtyle-prod-sub-b   (region = ${_REGION})
-  _ENV_SECRETS: ""            # e.g. vtyle-prod-env,vtyle-prod-env-cron
+  _REGION: ""
+  _PROJECT: ""
+  _REPO: ""
+  _TPL_BASE: ""
+  _TPL_PREFIX: ""
+  _MIGS: ""
+  _ZONES: ""
+  _SUBNETS: ""
+  _ENV_SECRETS: ""
   _KEEP_NUM: "3"
-  _STARTUP_SCRIPT_PATH: ""    # e.g. gs://vtyle/prod-startup.sh
-  _SLACK_WEBHOOK: ""          # optional
-  _VPC_NETWORK: ""            # e.g. vpc-vtyle-prod
-  _SA_EMAIL: ""               # optional: service account attached to instances
+  _STARTUP_SCRIPT_PATH: ""
+  _SLACK_WEBHOOK: ""
+  _VPC_NETWORK: ""
+  _SA_EMAIL: ""
 
 steps:
-  # 1) Build & Push
   - name: gcr.io/cloud-builders/docker
     id: build
     args: ["build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","."]
@@ -35,7 +34,6 @@ steps:
     id: push-latest
     args: ["push","${_REPO}:latest"]
 
-  # 2) 모든 Zonal MIG 배포
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: deploy-migs
     entrypoint: bash
@@ -59,7 +57,6 @@ steps:
           echo "ERROR: MIGS/ZONES/SUBNETS/ENV_SECRETS counts must match."; exit 1
         fi
 
-        # startup-script 메타데이터
         STARTUP_FILE_FLAG=()
         METADATA_BASE="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=prod"
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
@@ -70,7 +67,6 @@ steps:
           fi
         fi
 
-        # 이전 템플릿 저장 파일 초기화
         : > /workspace/prev_templates.csv
 
         for i in "${!MIG_NAMES[@]}"; do
@@ -86,7 +82,6 @@ steps:
           TPL_NEW="${_TPL_BASE}-${SUBNET_NAME}-${SHORT_SHA}"
           METADATA="${METADATA_BASE},ENV_SECRET_NAME=${ENV_SECRET_NAME}"
 
-          # 👉 배포 시작 전에 '현재 템플릿'을 저장 (롤백용)
           CUR_TEMPLATE=$(gcloud compute instance-groups managed describe "${MIG}" \
             --zone="${ZONE}" --format="value(versions[0].instanceTemplate)" || true)
           echo "${MIG},${ZONE},${CUR_TEMPLATE}" >> /workspace/prev_templates.csv
@@ -111,14 +106,12 @@ steps:
             --no-address \
             "${SA_FLAGS[@]}"
 
-          # MIG 사이즈 0이면 1로
           CUR_SIZE=$(gcloud compute instance-groups managed describe "${MIG}" \
             --zone="${ZONE}" --format='value(targetSize)' || echo 0)
           if [[ "${CUR_SIZE:-0}" -eq 0 ]]; then
             gcloud compute instance-groups managed resize "${MIG}" --zone="${ZONE}" --size=1
           fi
 
-          # 롤링 업데이트
           TPL_PATH="projects/${PROJECT}/global/instanceTemplates/${TPL_NEW}"
           echo "Update ${MIG} → ${TPL_PATH}"
           gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
@@ -126,13 +119,11 @@ steps:
             --type=proactive --max-surge=1 --max-unavailable=0 \
             "--version=template=${TPL_PATH}"
 
-          # 안정화 대기
           gcloud compute instance-groups managed wait-until "${MIG}" --zone="${ZONE}" --stable --timeout=900
         done
 
         echo ok > /workspace/deploy.ok
 
-  # 3) 성공 시 오래된 템플릿 정리
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: prune-old-templates
     entrypoint: bash
@@ -181,7 +172,6 @@ steps:
           gcloud compute instance-templates delete "${T}" --project="${PROJECT}" --quiet
         done
 
-  # 4) 실패 시: 정확 롤백 (prev_templates.csv 사용)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rollback-on-failure
     entrypoint: bash
@@ -190,7 +180,6 @@ steps:
       - -lc
       - |
         set -euo pipefail
-        # 성공했다면 스킵
         if [[ -f /workspace/deploy.ok ]]; then
           echo "deploy.ok exists → skip rollback"
           exit 0
@@ -214,11 +203,9 @@ steps:
           fi
         done < /workspace/prev_templates.csv
 
-        # 롤백 시도 후에도 빌드는 실패로 반환(의도적인 실패 표식)
         [[ "${ROLLBACKED}" -eq 1 ]] || echo "Nothing rolled back."
         exit 1
 
-  # 5) (선택) Slack 알림
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: notify
     entrypoint: bash
