@@ -161,15 +161,15 @@ steps:
 
         TO_DELETE=(); COUNT=0
         for T in "$${ALL[@]}"; do
-          echo "$${PROTECT_NAMES}" | grep -qx "${T}" && continue
+          echo "$${PROTECT_NAMES}" | grep -qx "$${T}" && continue
           COUNT=$((COUNT+1))
-          (( COUNT > KEEP )) && TO_DELETE+=("${T}")
+          (( COUNT > KEEP )) && TO_DELETE+=("$${T}")
         done
 
         (( ${#TO_DELETE[@]} )) || { echo "Nothing to delete."; exit 0; }
         printf 'Deleting old templates:\n - %s\n' "${TO_DELETE[@]}"
         for T in "${TO_DELETE[@]}"; do
-          gcloud compute instance-templates delete "${T}" --project="$${PROJECT}" --quiet
+          gcloud compute instance-templates delete "$${T}" --project="$${PROJECT}" --quiet
         done
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
