@@ -43,17 +43,23 @@ steps:
       - |
         set -euo pipefail
         
-        # ✅ Cloud Build 치환 → 단일 $
+        # Cloud Build substitutions → 문자열 치환 결과가 들어옵니다 (단일 $ 사용).
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
         TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
         IMAGE_URI="${_REPO}:$SHORT_SHA"
-        VPC_NETWORK="${_VPC_NETWORK}"      # ← 공백 없이
-        SUBNET_NAME="${_SUBNET_NAME}"      # ← 공백 없이
+        VPC_NETWORK="${_VPC_NETWORK}"   # ✅ 트리거의 _VPC_NETWORK 값이 치환되어 들어옴
+        SUBNET_NAME="${_SUBNET_A}"      # ✅ 트리거의 _SUBNET_A 사용 (이전 _SUBNET_NAME 오타 수정)
         
-        # 선택: 필수 치환값 누락이면 즉시 실패
-        : "${_VPC_NETWORK:?_VPC_NETWORK not set}"
-        : "${_SUBNET_NAME:?_SUBNET_NAME not set}"
+        # ⛔️ 치환변수 자체를 검사하지 말고, 방금 만든 Bash 변수로 검사하세요.
+        if [[ -z "$${VPC_NETWORK}" ]]; then
+          echo "_VPC_NETWORK is empty (check trigger substitutions)."
+          exit 1
+        fi
+        if [[ -z "$${SUBNET_NAME}" ]]; then
+          echo "_SUBNET_A is empty (check trigger substitutions)."
+          exit 1
+        fi
         
         echo "Creating GLOBAL IT: $${TPL_NEW}"
         METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev"
