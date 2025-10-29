@@ -58,7 +58,7 @@ steps:
         fi
 
         STARTUP_FILE_FLAG=()
-        METADATA_BASE="IMAGE_URI=${IMAGE_URI},ENVIRONMENT=prod"
+        METADATA_BASE="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=prod"
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
             METADATA_BASE="${METADATA_BASE},startup-script-url=${_STARTUP_SCRIPT_PATH}"
