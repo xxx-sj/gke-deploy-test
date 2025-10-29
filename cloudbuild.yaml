@@ -16,6 +16,8 @@ substitutions:
   _KEEP_NUM: "3"              # 정리 시 보관 개수(기본 3)
   _STARTUP_SCRIPT_PATH: ""    # 예: gs://vtyle/app-startup.sh 또는 리포 내 로컬 경로
   _SLACK_WEBHOOK: ""          # (선택)
+  _VPC_NETWORK: ""
+  _SUBNET_A: ""
 
 steps:
   # 1) Build
@@ -45,6 +47,8 @@ steps:
         IMAGE_URI="${_REPO}:$SHORT_SHA"
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
+        VPC_SUBNET = "${_VPC_SUBNET}"
+        SUBNET = "${_SUBNET_A}"
         
         echo "Creating GLOBAL IT: $${TPL_NEW}"
 
@@ -76,8 +80,9 @@ steps:
           --machine-type="e2-medium" \
           --image-family="debian-11" \
           --image-project="debian-cloud" \
-          --network="vpc-vtyle-dev" \
-          --subnet="vtyle-dev-sub-a" \
+          --network="vpc-$${VPC_NETWORK}" \
+          --subnet-region="$${REGION}" \   
+          --subnet="${SUBNET}" \
           --scopes="cloud-platform" \
           --no-address
 
