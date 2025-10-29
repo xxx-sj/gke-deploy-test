@@ -13,7 +13,7 @@ substitutions:
   _TPL_PREFIX: ""             # 예: it-vtyle-prod
   _MIGS: ""                   # 예: mig-vtyle-prod-a,mig-vtyle-prod-b
   _ZONES: ""                  # 예: asia-northeast3-a,asia-northeast3-b
-  _SUBNETS: ""                # 예: vtyle-prod-sub-a,vtyle-prod-sub-b   (region= _REGION)
+  _SUBNETS: ""                # 예: vtyle-prod-sub-a,vtyle-prod-sub-b   (region = ${_REGION})
   _ENV_SECRETS: ""            # 예: vtyle-prod-env,vtyle-prod-env-cron
   _KEEP_NUM: "3"
   _STARTUP_SCRIPT_PATH: ""    # 예: gs://vtyle/prod-startup.sh
@@ -74,24 +74,24 @@ steps:
         fi
 
         # 각 MIG 반복
-        for i in "${!MIG_NAMES[@]}"; do
-          MIG="${MIG_NAMES[$i]}"
-          ZONE="${ZONES[$i]}"
-          SUBNET_NAME="${SUBNETS[$i]}"
-          ENV_SECRET_NAME="${ENV_SECRETS[$i]}"
+        for i in "$${!MIG_NAMES[@]}"; do
+          MIG="$${MIG_NAMES[$i]}"
+          ZONE="$${ZONES[$i]}"
+          SUBNET_NAME="$${SUBNETS[$i]}"
+          ENV_SECRET_NAME="$${ENV_SECRETS[$i]}"
 
-          [[ -z "$MIG" || -z "$ZONE" || -z "$SUBNET_NAME" || -z "$ENV_SECRET_NAME" ]] && { echo "ERROR: empty item at index $i"; exit 1; }
+          [[ -z "$${MIG}" || -z "$${ZONE}" || -z "$${SUBNET_NAME}" || -z "$${ENV_SECRET_NAME}" ]] && { echo "ERROR: empty item at index $i"; exit 1; }
 
           # 서브넷 URI(글로벌 템플릿에서도 안전하게)
-          SUBNET_URI="projects/${PROJECT}/regions/${REGION}/subnetworks/${SUBNET_NAME}"
+          SUBNET_URI="projects/$${PROJECT}/regions/$${REGION}/subnetworks/$${SUBNET_NAME}"
 
           # 템플릿 이름: 베이스-서브넷-커밋
-          TPL_NEW="${_TPL_BASE}-${SUBNET_NAME}-${SHORT_SHA}"
+          TPL_NEW="${_TPL_BASE}-$${SUBNET_NAME}-${SHORT_SHA}"
 
           # 메타데이터(ENV_SECRET_NAME 주입)
-          METADATA="${METADATA_BASE},ENV_SECRET_NAME=${ENV_SECRET_NAME}"
+          METADATA="$${METADATA_BASE},ENV_SECRET_NAME=$${ENV_SECRET_NAME}"
 
-          echo "=== [${MIG} @ ${ZONE}] Creating template: ${TPL_NEW}"
+          echo "=== [$${MIG} @ $${ZONE}] Creating template: $${TPL_NEW}"
           # 필요 최소 권한만 쓰고 싶으면 --scopes 줄이고 --service-account 지정
           SA_FLAGS=()
           if [[ -n "${_SA_EMAIL}" ]]; then
@@ -100,38 +100,38 @@ steps:
             SA_FLAGS=( --scopes="cloud-platform" )
           fi
 
-          gcloud compute instance-templates create "${TPL_NEW}" \
-            --project="${PROJECT}" \
-            --metadata="${METADATA}" "${STARTUP_FILE_FLAG[@]}" \
+          gcloud compute instance-templates create "$${TPL_NEW}" \
+            --project="$${PROJECT}" \
+            --metadata="$${METADATA}" "$${STARTUP_FILE_FLAG[@]}" \
             --machine-type="e2-medium" \
             --image-family="debian-11" --image-project="debian-cloud" \
             --boot-disk-size="30GB" \
-            --network="${VPC_NETWORK}" \
-            --subnet="${SUBNET_URI}" \
+            --network="$${VPC_NETWORK}" \
+            --subnet="$${SUBNET_URI}" \
             --tags="prod-node-server,lb-health-check" \
             --no-address \
-            "${SA_FLAGS[@]}"
+            "$${SA_FLAGS[@]}"
 
           # MIG 현재 사이즈 0이면 1로 올려두기(무중단 롤링 보장)
-          CUR_SIZE=$(gcloud compute instance-groups managed describe "${MIG}" --zone="${ZONE}" --format='value(targetSize)' || echo 0)
-          if [[ "${CUR_SIZE:-0}" -eq 0 ]]; then
-            echo "MIG ${MIG} size=0 → resize to 1"
-            gcloud compute instance-groups managed resize "${MIG}" --zone="${ZONE}" --size=1
+          CUR_SIZE=$(gcloud compute instance-groups managed describe "$${MIG}" --zone="$${ZONE}" --format='value(targetSize)' || echo 0)
+          if [[ "$${CUR_SIZE:-0}" -eq 0 ]]; then
+            echo "MIG $${MIG} size=0 → resize to 1"
+            gcloud compute instance-groups managed resize "$${MIG}" --zone="$${ZONE}" --size=1
           fi
 
           # 롤링 업데이트 시작
-          TPL_PATH="projects/${PROJECT}/global/instanceTemplates/${TPL_NEW}"
-          echo "Start proactive update: ${MIG} ← ${TPL_PATH}"
-          gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
-            --zone="${ZONE}" \
+          TPL_PATH="projects/$${PROJECT}/global/instanceTemplates/$${TPL_NEW}"
+          echo "Start proactive update: $${MIG} ← $${TPL_PATH}"
+          gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
+            --zone="$${ZONE}" \
             --type=proactive \
             --max-surge=1 \
             --max-unavailable=0 \
-            "--version=template=${TPL_PATH}"
+            "--version=template=$${TPL_PATH}"
 
           # 안정화 대기 (통일: wait-until --stable)
-          echo "Waiting stable: ${MIG}"
-          gcloud compute instance-groups managed wait-until "${MIG}" --zone="${ZONE}" --stable --timeout=900
+          echo "Waiting stable: $${MIG}"
+          gcloud compute instance-groups managed wait-until "$${MIG}" --zone="$${ZONE}" --stable --timeout=900
         done
 
         echo ok > /workspace/deploy.ok
@@ -156,31 +156,31 @@ steps:
         IFS=',' read -r -a ZONES <<< "${_ZONES}"
 
         PROTECT_LINKS=""
-        for i in "${!MIGS[@]}"; do
-          MIG="${MIGS[$i]}"; ZONE="${ZONES[$i]}"
-          [[ -z "$MIG" ]] && continue
-          LINKS=$(gcloud compute instance-groups managed describe "${MIG}" \
-            --project="${PROJECT}" --zone="${ZONE}" \
+        for i in "$${!MIGS[@]}"; do
+          MIG="$${MIGS[$i]}"; ZONE="$${ZONES[$i]}"
+          [[ -z "$${MIG}" ]] && continue
+          LINKS=$(gcloud compute instance-groups managed describe "$${MIG}" \
+            --project="$${PROJECT}" --zone="$${ZONE}" \
             --format="value(versions[].instanceTemplate)" || true)
-          PROTECT_LINKS="${PROTECT_LINKS} ${LINKS}"
+          PROTECT_LINKS="$${PROTECT_LINKS} $${LINKS}"
         done
 
-        PROTECT_NAMES=$(echo "${PROTECT_LINKS}" | sed -E 's#.*/instanceTemplates/##g' | tr ' ' '\n' | sort -u)
+        PROTECT_NAMES=$(echo "$${PROTECT_LINKS}" | sed -E 's#.*/instanceTemplates/##g' | tr ' ' '\n' | sort -u)
 
         mapfile -t ALL < <(gcloud compute instance-templates list \
-          --project="${PROJECT}" \
-          --filter="name~'^${TPL_PREFIX}'" \
+          --project="$${PROJECT}" \
+          --filter="name~'^${_TPL_PREFIX}'" \
           --sort-by="~creationTimestamp" \
           --format="value(name)")
 
         TO_DELETE=(); COUNT=0
-        for T in "${ALL[@]}"; do
+        for T in "$${ALL[@]}"; do
           # 사용 중이면 보호
-          if echo "${PROTECT_NAMES}" | grep -qx "${T}"; then
+          if echo "$${PROTECT_NAMES}" | grep -qx "$${T}"; then
             continue
           fi
           COUNT=$((COUNT+1))
-          (( COUNT > KEEP )) && TO_DELETE+=("${T}")
+          (( COUNT > KEEP )) && TO_DELETE+=("$${T}")
         done
 
         if ((${#TO_DELETE[@]}==0)); then
@@ -189,9 +189,9 @@ steps:
         fi
 
         echo "Deleting old templates:"
-        printf ' - %s\n' "${TO_DELETE[@]}"
-        for T in "${TO_DELETE[@]}"; do
-          gcloud compute instance-templates delete "${T}" --project="${PROJECT}" --quiet
+        printf ' - %s\n' "$${TO_DELETE[@]}"
+        for T in "$${TO_DELETE[@]}"; do
+          gcloud compute instance-templates delete "$${T}" --project="$${PROJECT}" --quiet
         done
 
   # 4) 실패 시: 전 MIG 롤백
@@ -214,24 +214,24 @@ steps:
         IFS=',' read -r -a ZONES <<< "${_ZONES}"
 
         PREV=$(gcloud compute instance-templates list \
-          --project="${PROJECT}" \
-          --filter="name~'^${TPL_PREFIX}'" \
+          --project="${_PROJECT}" \
+          --filter="name~'^${_TPL_PREFIX}'" \
           --sort-by="~creationTimestamp" \
           --format="value(name)" | sed -n '2p')
 
-        if [[ -z "${PREV}" ]]; then
+        if [[ -z "$${PREV}" ]]; then
           echo "No previous template found; cannot rollback."
           exit 1
         fi
 
-        TPL_PATH="projects/${PROJECT}/global/instanceTemplates/${PREV}"
-        for i in "${!MIGS[@]}"; do
-          MIG="${MIGS[$i]}"; ZONE="${ZONES[$i]}"
-          echo "Rollback ${MIG} → ${PREV}"
-          gcloud compute instance-groups managed rolling-action start-update "${MIG}" \
-            --project="${PROJECT}" --zone="${ZONE}" \
+        TPL_PATH="projects/${_PROJECT}/global/instanceTemplates/$${PREV}"
+        for i in "$${!MIGS[@]}"; do
+          MIG="$${MIGS[$i]}"; ZONE="$${ZONES[$i]}"
+          echo "Rollback $${MIG} → $${PREV}"
+          gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
+            --project="${_PROJECT}" --zone="$${ZONE}" \
             --type=proactive --max-surge=0 --max-unavailable=1 \
-            --version="template=${TPL_PATH}"
+            --version="template=$${TPL_PATH}"
         done
         exit 1
 
@@ -244,11 +244,16 @@ steps:
       - |
         set -euo pipefail
         [[ -z "${_SLACK_WEBHOOK}" ]] && { echo "skip slack"; exit 0; }
+
         STATUS="SUCCESS"
         [[ ! -f /workspace/deploy.ok ]] && STATUS="FAILURE"
-        MSG="*prod deploy* ${STATUS}\nrepo: ${_REPO}\nsha: ${SHORT_SHA}\nregion: ${_REGION}\nmigs: ${_MIGS}"
+
+        # jq 의존성 없이 최소 JSON 전송
+        PAYLOAD=$(printf '{"text":"*prod deploy* %s\nrepo: %s\nsha: %s\nregion: %s\nmigs: %s"}' \
+          "$${STATUS}" "${_REPO}" "$SHORT_SHA" "${_REGION}" "${_MIGS}")
+
         curl -s -X POST -H 'Content-type: application/json' \
-          --data "$(jq -Rn --arg text "$MSG" '{text:$text}')" \
+          --data "$${PAYLOAD}" \
           "${_SLACK_WEBHOOK}" || true
 
 images:
