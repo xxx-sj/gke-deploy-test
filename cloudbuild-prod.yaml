@@ -27,6 +27,15 @@ steps:
     args: [ "build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","." ]
 
   - name: gcr.io/cloud-builders/docker
+    id: check-repo
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        echo "REPO=${_REPO}"
+        [[ "${_REPO}" == *"/"*"/"*"/"*"/"* ]] || { echo "💥 _REPO에 IMAGE 이름이 없습니다 (…/repo/**image**)"; exit 1; }
+
+  - name: gcr.io/cloud-builders/docker
     id: push-sha
     args: [ "push","${_REPO}:$SHORT_SHA" ]
 
