@@ -47,7 +47,7 @@ steps:
         IMAGE_URI="${_REPO}:$SHORT_SHA"
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
-        VPC_SUBNET = "${_VPC_SUBNET}"
+        VPC_NETWORK = "${_VPC_NETWORK}"
         SUBNET = "${_SUBNET_A}"
         
         echo "Creating GLOBAL IT: $${TPL_NEW}"
