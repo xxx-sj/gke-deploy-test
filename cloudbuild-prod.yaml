@@ -112,7 +112,7 @@ steps:
             gcloud compute instance-groups managed resize "$${MIG}" --zone="$${ZONE}" --size=1
           fi
 
-          TPL_PATH="projects/${PROJECT}/global/instanceTemplates/$${TPL_NEW}"
+          TPL_PATH="projects/$${PROJECT}/global/instanceTemplates/$${TPL_NEW}"
           echo "Update $${MIG} → $${TPL_PATH}"
           gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
             --zone="$${ZONE}" \
