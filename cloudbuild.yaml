@@ -81,12 +81,12 @@ steps:
         set -euo pipefail
         CUR=$(gcloud compute instance-groups managed describe "${_MIG_NAME}" \
           --region="${_REGION}" --format='value(targetSize)' || echo 0)
-        if [[ "${CUR:-0}" -eq 0 ]]; then
+        if [[ "$${CUR:-0}" -eq 0 ]]; then
           echo "MIG size is 0 → resizing to 1"
           gcloud compute instance-groups managed resize "${_MIG_NAME}" \
             --region="${_REGION}" --size=1
         else
-          echo "MIG size = ${CUR}, keep as is."
+          echo "MIG size = $${CUR}, keep as is."
         fi
 
   # 4) 롤링 업데이트 (GA)
@@ -162,6 +162,7 @@ steps:
         done
 
   # 7) 롤백 (GA)
+  # 7) 롤백 (GA)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rollback-on-failure
     entrypoint: bash
@@ -170,14 +171,21 @@ steps:
       - -lc
       - |
         set -euo pipefail
-        [[ -f /workspace/deploy.ok ]] && { echo "skip rollback"; exit 0; }
-
+        # 안정화 성공 마커가 없으면 롤백
+        if [[ -f /workspace/stable.ok ]]; then
+          echo "stable.ok found → skip rollback"
+          exit 0
+        fi
+        
+        echo "No stable.ok → start rollback to previous template"
         PROJECT="${_PROJECT}"; REGION="${_REGION}"; TPL_PREFIX="${_TPL_PREFIX}"; MIG="${_MIG_NAME}"
+        
         PREV=$(gcloud compute instance-templates list \
           --project="$${PROJECT}" --filter="name~'^$${TPL_PREFIX}'" \
           --sort-by="~creationTimestamp" --format="value(name)" | sed -n '2p')
+        
         [[ -z "$${PREV}" ]] && { echo "no previous template"; exit 1; }
-
+        
         TPL_PATH="projects/$${PROJECT}/global/instanceTemplates/$${PREV}"
         gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
           --project="$${PROJECT}" --region="$${REGION}" \
