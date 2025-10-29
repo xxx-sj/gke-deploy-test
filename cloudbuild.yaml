@@ -82,7 +82,7 @@ steps:
           --image-project="debian-cloud" \
           --network="vpc-$${VPC_NETWORK}" \
           --subnet-region="$${REGION}" \   
-          --subnet="${SUBNET}" \
+          --subnet="$${SUBNET}" \
           --scopes="cloud-platform" \
           --no-address
 
