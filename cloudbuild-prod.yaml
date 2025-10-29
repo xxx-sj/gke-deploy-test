@@ -49,9 +49,7 @@ steps:
 
         # --- 👇 여기에 디버그 코드 추가 ---
         echo "=== DEBUG: Variable Check ==="
-        echo "IMAGE_URI (단일 $): ${IMAGE_URI}"
         echo "IMAGE_URI (이중 $$): $${IMAGE_URI}"
-        echo "PROJECT (단일 $): ${PROJECT}"
         echo "PROJECT (이중 $$): $${PROJECT}"
         echo "============================="
         # --- 👆 디버그 코드 추가 끝 ---
