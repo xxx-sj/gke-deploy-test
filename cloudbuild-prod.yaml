@@ -45,7 +45,7 @@ steps:
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
         VPC_NETWORK="${_VPC_NETWORK}"
-        IMAGE_URI="${_REPO}:$SHORT_SHA"
+        IMAGE_URI="${_REPO}:$$SHORT_SHA"
 
         IFS=',' read -r -a MIG_NAMES   <<< "${_MIGS}"
         IFS=',' read -r -a ZONES       <<< "${_ZONES}"
