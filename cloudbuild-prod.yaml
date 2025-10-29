@@ -47,6 +47,17 @@ steps:
         VPC_NETWORK="${_VPC_NETWORK}"
         IMAGE_URI="${_REPO}:$SHORT_SHA"
 
+        # --- 👇 여기에 디버그 코드 추가 ---
+        echo "=== DEBUG: Variable Check ==="
+        echo "IMAGE_URI (단일 $): ${IMAGE_URI}"
+        echo "IMAGE_URI (이중 $$): $${IMAGE_URI}"
+        echo "PROJECT (단일 $): ${PROJECT}"
+        echo "PROJECT (이중 $$): $${PROJECT}"
+        echo "============================="
+        # --- 👆 디버그 코드 추가 끝 ---
+
+        IFS=',' read -r -a MIG_NAMES   <<< "${_MIGS}"
+
         IFS=',' read -r -a MIG_NAMES   <<< "${_MIGS}"
         IFS=',' read -r -a ZONES       <<< "${_ZONES}"
         IFS=',' read -r -a SUBNETS     <<< "${_SUBNETS}"
