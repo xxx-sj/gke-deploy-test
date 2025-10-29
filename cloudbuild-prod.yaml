@@ -208,8 +208,15 @@ steps:
 
         (( ${#TO_DELETE[@]} )) || { echo "Nothing to delete."; exit 0; }
         printf 'Deleting old templates:\n - %s\n' "${TO_DELETE[@]}"
+
         for T in "${TO_DELETE[@]}"; do
-          gcloud compute instance-templates delete "$${T}" --project="$${PROJECT}" --quiet
+          # 존재하는지 확인하고 없으면 skip
+          if gcloud compute instance-templates describe "$${T}" --project="$${PROJECT}" >/dev/null 2>&1; then
+            gcloud compute instance-templates delete "$${T}" --project="$${PROJECT}" --quiet \
+              || echo "WARN: failed to delete $${T}"
+          else
+            echo "skip (not found): $${T}"
+          fi
         done
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
