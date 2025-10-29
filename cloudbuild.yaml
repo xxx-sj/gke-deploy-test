@@ -72,9 +72,27 @@ steps:
 
         echo "$${TPL_NEW}" > /workspace/tpl_name.txt
 
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: ensure-size
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        CUR=$(gcloud compute instance-groups managed describe "${_MIG_NAME}" \
+          --region="${_REGION}" --format='value(targetSize)' || echo 0)
+        if [[ "${CUR:-0}" -eq 0 ]]; then
+          echo "MIG size is 0 → resizing to 1"
+          gcloud compute instance-groups managed resize "${_MIG_NAME}" \
+            --region="${_REGION}" --size=1
+        else
+          echo "MIG size = ${CUR}, keep as is."
+        fi
+
   # 4) 롤링 업데이트 (GA)
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: rolling-update
+    waitFor: ['ensure-size']
     entrypoint: bash
     args:
       - -lc
