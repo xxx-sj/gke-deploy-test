@@ -24,15 +24,15 @@ substitutions:
 steps:
   - name: gcr.io/cloud-builders/docker
     id: build
-    args: ["build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","."]
+    args: [ "build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","." ]
 
   - name: gcr.io/cloud-builders/docker
     id: push-sha
-    args: ["push","${_REPO}:$SHORT_SHA"]
+    args: [ "push","${_REPO}:$SHORT_SHA" ]
 
   - name: gcr.io/cloud-builders/docker
     id: push-latest
-    args: ["push","${_REPO}:latest"]
+    args: [ "push","${_REPO}:latest" ]
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     id: deploy-migs
