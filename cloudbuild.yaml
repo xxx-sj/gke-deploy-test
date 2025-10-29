@@ -43,27 +43,21 @@ steps:
       - |
         set -euo pipefail
         
-        TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
-        IMAGE_URI="${_REPO}:$SHORT_SHA"
+        # ✅ Cloud Build 치환 → 단일 $
         PROJECT="${_PROJECT}"
         REGION="${_REGION}"
-        VPC_NETWORK = "${_VPC_NETWORK}"
-        SUBNET = "${_SUBNET_A}"
+        TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
+        IMAGE_URI="${_REPO}:$SHORT_SHA"
+        VPC_NETWORK="${_VPC_NETWORK}"      # ← 공백 없이
+        SUBNET_NAME="${_SUBNET_NAME}"      # ← 공백 없이
+        
+        # 선택: 필수 치환값 누락이면 즉시 실패
+        : "${_VPC_NETWORK:?_VPC_NETWORK not set}"
+        : "${_SUBNET_NAME:?_SUBNET_NAME not set}"
         
         echo "Creating GLOBAL IT: $${TPL_NEW}"
-
-        # 기존 동일 이름 템플릿 있으면 삭제(안전)
-        if gcloud compute instance-templates describe "$${TPL_NEW}" \
-          --project="$${PROJECT}" --format="none" 2>/dev/null; then
-          echo "Template $${TPL_NEW} already exists. Deleting it now."
-          gcloud compute instance-templates delete "$${TPL_NEW}" \
-            --project="$${PROJECT}" --quiet
-        fi
+        METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev"
         
-        # 1) 공통 metadata
-        METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev" 
-
-        # 2) startup script 처리
         STARTUP_FILE_FLAG=()
         if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
           if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
@@ -73,19 +67,19 @@ steps:
           fi
         fi
         
-        # 3) 템플릿 생성 (Global)
+        # 서브넷은 리전 자원이므로 region도 함께 지정
         gcloud compute instance-templates create "$${TPL_NEW}" \
           --project="$${PROJECT}" \
           --metadata="$${METADATA}" "$${STARTUP_FILE_FLAG[@]}" \
           --machine-type="e2-medium" \
           --image-family="debian-11" \
           --image-project="debian-cloud" \
-          --network="vpc-$${VPC_NETWORK}" \
-          --subnet-region="$${REGION}" \   
-          --subnet="$${SUBNET}" \
+          --network="$${VPC_NETWORK}" \
+          --subnet="$${SUBNET_NAME}" \
+          --subnet-region="$${REGION}" \
           --scopes="cloud-platform" \
           --no-address
-
+        
         echo "$${TPL_NEW}" > /workspace/tpl_name.txt
 
   # 4) MIG 롤링 업데이트 시작
