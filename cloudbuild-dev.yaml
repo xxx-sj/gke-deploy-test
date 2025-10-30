@@ -1,0 +1,257 @@
+# cloudbuild.yaml
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_HIGHCPU_8"
+
+timeout: "1800s"   # 30분
+
+substitutions:
+  _REGION: ""                 # 예: asia-northeast3
+  _PROJECT: ""                # 예: bold-proton-467706-f3
+  _REPO: ""                   # 예: asia-northeast3-docker.pkg.dev/.../vtyle-dev-repo/app
+  _MIG_NAME: ""               # 예: app-vtyle-dev (리전 MIG)
+  _TPL_BASE: ""               # 예: app-tpl-base-vtyle-dev (리전 템플릿 '베이스' 이름)
+  _TPL_PREFIX: ""             # 예: app-tpl-dev (정리/롤백용 접두사; 환경별로 다르게)
+  _MIG_NAMES: ""              # 예: app-vtyle-dev,app-worker-dev (정리 시 보호할 MIG들)
+  _KEEP_NUM: "3"              # 정리 시 보관 개수(기본 3)
+  _STARTUP_SCRIPT_PATH: ""    # 예: gs://vtyle/app-startup.sh 또는 리포 내 로컬 경로
+  _SLACK_WEBHOOK: ""          # (선택)
+  _VPC_NETWORK: ""
+  _SUBNET_A: ""
+
+steps:
+  # 1) Build
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ["build","-t","${_REPO}:$SHORT_SHA","-t","${_REPO}:latest","."]
+
+  # 2) Push
+  - name: gcr.io/cloud-builders/docker
+    id: push-sha
+    args: ["push","${_REPO}:$SHORT_SHA"]
+
+  - name: gcr.io/cloud-builders/docker
+    id: push-latest
+    args: ["push","${_REPO}:latest"]
+
+  # 3) 새 Regional Instance Template 생성
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: create-template
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        
+        TPL_NEW="${_TPL_BASE}-${SHORT_SHA}"
+        IMAGE_URI="${_REPO}:$SHORT_SHA"
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        VPC_NETWORK="${_VPC_NETWORK}"
+        SUBNET_A="${_SUBNET_A}"
+        
+        echo "Creating regional IT: $${TPL_NEW} in $${REGION}"
+        
+        if gcloud compute instance-templates describe "$${TPL_NEW}" \
+          --project="$${PROJECT}" --format="none" 2>/dev/null; then
+          echo "Template $${TPL_NEW} already exists. Deleting it now."
+          gcloud compute instance-templates delete "$${TPL_NEW}" --project="$${PROJECT}" --quiet
+        fi
+        
+        # 1) 공통 metadata를 하나로 구성
+        METADATA="IMAGE_URI=$${IMAGE_URI},ENVIRONMENT=dev" 
+
+        # 2) startup script 처리
+        STARTUP_FILE_FLAG=()
+        if [[ -n "${_STARTUP_SCRIPT_PATH}" ]]; then
+          if [[ "${_STARTUP_SCRIPT_PATH}" == gs://* ]]; then
+            METADATA="$${METADATA},startup-script-url=${_STARTUP_SCRIPT_PATH}"
+          else
+            STARTUP_FILE_FLAG=( --metadata-from-file=startup-script="${_STARTUP_SCRIPT_PATH}" )
+          fi
+        fi
+        
+        # 3) 새 템플릿 생성
+          gcloud compute instance-templates create "$${TPL_NEW}" \
+          --project="$${PROJECT}" --region="$${REGION}" \
+          --metadata="$${METADATA}" "$${STARTUP_FILE_FLAG[@]}" \
+          --machine-type="e2-medium" --image-family="debian-11" \
+          --image-project="debian-cloud" \
+          --boot-disk-size="30GB" \
+          --network="$${VPC_NETWORK}" \
+          --subnet="$${SUBNET_A}" \
+          --scopes="cloud-platform" \
+          --tags="dev-node-server,lb-health-check" \
+          --no-address
+        
+          echo "$${TPL_NEW}" > tpl_name.txt
+
+  # 4) MIG 무중단 롤링 업데이트 (배포 단계)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: rolling-update
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        
+        # 1. 템플릿 이름 확인
+        TPL_NEW="$(cat tpl_name.txt)"
+        if [[ -z "$${TPL_NEW}" ]]; then
+          echo "ERROR: Template name file is empty. Check Step 3."
+          exit 1
+        fi
+        
+        # 2. 경로 설정 (Global 템플릿 사용)
+        # 🚨 여기서 global/instanceTemplates를 사용하고 있으므로, Step 3에서 --region 인수를 제거해야 합니다.
+        #    Instance Templates는 기본적으로 Global 리소스입니다. Region MIG를 업데이트하지만 템플릿은 Global로 생성하는 것이 일반적입니다.
+        TPL_PATH="projects/${_PROJECT}/global/instanceTemplates/$${TPL_NEW}"
+        
+        echo "Start proactive rolling update of MIG ${_MIG_NAME} with $${TPL_PATH}"
+        
+        # 3. 롤링 업데이트 명령어 실행
+        gcloud compute instance-groups managed rolling-action start-update "${_MIG_NAME}" \
+          --region="${_REGION}" \
+          --type=proactive \
+          --max-surge=1 \
+          --max-unavailable=0 \
+          "--version=template=$${TPL_PATH}"
+
+        # 4. 성공 마커 생성 (여기까지 실행되었다는 것은 업데이트가 성공적으로 '시작'되었음을 의미)
+        echo ok > /workspace/deploy.ok
+
+    # 🚨 핵심 변경 사항 1: 이 단계의 실패를 허용하여 다음 단계를 항상 실행하도록 합니다.
+    allowFailure: true
+
+  # 5) 안정화 대기 (배포 성공 시에만)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: wait-stable
+    entrypoint: gcloud
+    # 🚨 핵심 변경 사항 2: 'rolling-update' 단계가 성공해야만 실행되도록 명시합니다.
+    waitFor: ['rolling-update']
+    args:
+      [
+        "compute","instance-groups","managed","wait-until-stable","${_MIG_NAME}",
+        "--region=${_REGION}","--timeout=900"
+      ]
+
+  # 6) (성공 시) 오래된 템플릿 정리 (배포 성공 시에만)
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: prune-old-templates
+    entrypoint: bash
+    # 🚨 핵심 변경 사항 3: 'wait-stable' 단계가 성공해야만 실행되도록 명시합니다.
+    waitFor: ['wait-stable']
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        TPL_PREFIX="${_TPL_PREFIX}"
+        KEEP="${_KEEP_NUM:-3}"
+
+        IFS=',' read -r -a MIGS <<< "${_MIG_NAMES}"
+
+        PROTECT_LINKS=""
+        for MIG in "$${MIGS[@]}"; do
+          [[ -z "$${MIG}" ]] && continue
+          LINKS=$(gcloud compute instance-groups managed describe "$${MIG}" \
+            --project="$${PROJECT}" --region="$${REGION}" \
+            --format="value(versions[].instanceTemplate)" || true)
+          PROTECT_LINKS="$${PROTECT_LINKS} $${LINKS}"
+        done
+
+        PROTECT_NAMES=$(echo "$${PROTECT_LINKS}" | sed -E 's#.*/instanceTemplates/##g' | tr ' ' '\n' | sort -u)
+
+        echo "Protect templates referenced by MIGs:"
+        echo "$${PROTECT_NAMES}"
+
+        mapfile -t ALL < <(gcloud compute instance-templates list \
+          --project="$${PROJECT}" \
+          --filter="name~'^$${TPL_PREFIX}'" \
+          --sort-by="~creationTimestamp" \
+          --format="value(name)")
+
+        echo "Found templates (newest first) with prefix '$${TPL_PREFIX}':"
+        printf '%s\n' "$${ALL[@]}"
+
+        TO_DELETE=()
+        COUNT=0
+        for T in "$${ALL[@]}"; do
+          if echo "$${PROTECT_NAMES}" | grep -qx "$${T}"; then
+            continue
+          fi
+          COUNT=$((COUNT+1))
+          if (( COUNT > KEEP )); then
+            TO_DELETE+=("$${T}")
+          fi
+        done
+
+        if (( $${#TO_DELETE[@]} == 0 )); then
+          echo "Nothing to delete."
+          exit 0
+        fi
+
+        echo "Deleting old templates:"
+        printf ' - %s\n' "$${TO_DELETE[@]}"
+        for T in "$${TO_DELETE[@]}"; do
+          gcloud compute instance-templates delete "$${T}" \
+            --project="$${PROJECT}" --quiet
+        done
+
+
+  # 7) (실패 시) 자동 롤백: 이전 단계들 중 하나가 실패했을 때만 동작
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    id: rollback-on-failure
+    entrypoint: bash
+    # 🚨 핵심 변경 사항 4: 항상 실행되도록 waitFor: ['-']를 유지합니다.
+    waitFor: [ '-' ]
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+
+        # 🚨 핵심 변경 사항 5: deploy.ok 파일 존재 여부로 배포 성공 여부를 판단합니다.
+        if [[ -f /workspace/deploy.ok ]]; then
+          echo "✅ Previous step (rolling-update) succeeded. Skip rollback."
+          exit 0 
+        fi
+        
+        # 파일이 없으면 롤백 로직 실행
+        echo "⚠️ rolling-update step failed or skipped → starting rollback..."
+
+        MIG="${_MIG_NAME}"
+        TPL_PREFIX="${_TPL_PREFIX}"
+        PROJECT="${_PROJECT}"
+        REGION="${_REGION}"
+        
+        # 이전 템플릿 찾기
+        PREV=$(
+          gcloud compute instance-templates list \
+            --project="$${PROJECT}" \
+            --filter="name~'^$${TPL_PREFIX}'" \
+            --sort-by="~creationTimestamp" \
+            --format="value(name)" | sed -n '2p'
+        )
+
+        if [[ -z "$${PREV}" ]]; then
+          echo "No previous template found. Skip rollback."
+          exit 0
+        fi
+
+        # 🚨 템플릿 경로를 Global 템플릿 경로로 수정합니다.
+        TPL_PATH="projects/$${PROJECT}/global/instanceTemplates/$${PREV}"
+
+        echo "Rolling back to $${PREV} ($${TPL_PATH}) ..."
+        gcloud compute instance-groups managed rolling-action start-update "$${MIG}" \
+          --project="$${PROJECT}" --region="$${REGION}" \
+          --type=proactive --max-surge=0 --max-unavailable=1 \
+          --version="template=$${TPL_PATH}"
+
+        echo "✅ Rollback triggered."
+        # 배포가 실패했고 롤백을 시작했으므로 빌드를 최종적으로 실패(1)로 종료합니다.
+        exit 1
+
+images:
+  - "${_REPO}:$SHORT_SHA"
+  - "${_REPO}:latest"
